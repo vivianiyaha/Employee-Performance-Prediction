@@ -203,6 +203,30 @@ elif page == "About":
 # ============================
 # STREAMLIT UI
 # ============================
+# ============================
+# FUNCTIONS
+# ============================
+
+def get_issues(input_data):
+    issues = []
+
+    if input_data['KPIScore'].values[0] < 60:
+        issues.append("Low KPI Score")
+
+    if input_data['Attendance'].values[0] < 70:
+        issues.append("Poor Attendance")
+
+    if input_data['ProductivityScore'].values[0] < 60:
+        issues.append("Low Productivity")
+
+    if input_data['ProjectsCompleted'].values[0] < 5:
+        issues.append("Low Project Output")
+
+    if input_data['ManagerFeedback'].values[0] <= 2:
+        issues.append("Poor Manager Feedback")
+
+    return issues
+    
 st.title("Employee Performance Predictor")
 
 st.header("Enter Employee Data")
