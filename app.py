@@ -1,90 +1,175 @@
 import streamlit as st
-from web3 import Web3
-import json
+import pandas as pd
+import numpy as np
 
-# Access secrets securely
-API_KEY = st.secrets["API_KEY"]
-PRIVATE_KEY = st.secrets["PRIVATE_KEY"]
-WALLET_ADDRESS = st.secrets["WALLET_ADDRESS"]
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 
-# Connect to Binance Smart Chain (BSC) via an Infura or public RPC URL
-bsc_rpc_url = "https://bsc-dataseed.binance.org/"
-w3 = Web3(Web3.HTTPProvider(bsc_rpc_url))
+# ============================
+# Load dataset
+# ============================
+df = pd.read_csv('employee_performance.csv')
 
-# Deployed contract address (replace with actual contract address)
-contract_address = "0xYourContractAddressHere"
+# ============================
+# Encode categorical variables
+# ============================
+df['Department'] = df['Department'].map({
+    'Sales': 0,
+    'HR': 1,
+    'IT': 2,
+    'Finance': 3
+})
 
-# ABI of the contract (replace with actual ABI from your deployment)
-contract_abi = json.loads('[{"constant":true,"inputs":[],"name":"checkLiquidity","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"}]')
+df['ManagerFeedback'] = df['ManagerFeedback'].map({
+    'Poor': 0,
+    'Average': 1,
+    'Good': 2,
+    'Excellent': 3
+})
 
-# Connect to the contract
-contract = w3.eth.contract(address=contract_address, abi=contract_abi)
+# Drop unnecessary columns
+df = df.drop(['EmployeeID', 'EmployeeName'], axis=1, errors='ignore')
 
-# Function to check liquidity using Web3
-def check_liquidity(token_address, amount):
-    try:
-        result = contract.functions.checkLiquidity(token_address, amount).call()
-        return result
-    except Exception as e:
-        st.error(f"Error checking liquidity: {e}")
-        return False
+# ============================
+# Train Model
+# ============================
+X = df.drop('PerformanceRating', axis=1)
+y = df['PerformanceRating']   # 1–5 rating
 
-# Streamlit interface
-def main():
-    st.title("Trading Bot Smart Contract Interface")
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
-    # Display the wallet balance
-    balance = w3.eth.get_balance(WALLET_ADDRESS)
-    st.sidebar.subheader("Account Info")
-    st.sidebar.write(f"BNB Balance: {w3.fromWei(balance, 'ether')} BNB")
-    
-    st.sidebar.write(f"Contract Address: {contract_address}")
-    
-    # Liquidity and Honeypot Check
-    st.subheader("Liquidity and Honeypot Check")
-    token_address = st.text_input("Token Address", "0xTokenAddressHere")
-    amount = st.number_input("Amount", min_value=0.1, step=0.1)
+model = RandomForestClassifier(n_estimators=100)
+model.fit(X_train, y_train)
 
-    if st.button('Check Liquidity'):
-        if token_address and amount:
-            is_liquid = check_liquidity(token_address, amount)
-            if is_liquid:
-                st.success("Liquidity is sufficient for the trade.")
-            else:
-                st.error("Insufficient liquidity for the trade.")
+# ============================
+# Prediction Function
+# ============================
+def predict_performance(data):
+    prediction = model.predict(data)
+    probability = model.predict_proba(data)
+    return prediction, probability
 
-    # Trading Control
-    st.subheader("Trading Control")
+# ============================
+# Explainability Function
+# ============================
+def get_feature_importance(input_data):
+    importance = model.feature_importances_
+    feature_names = X.columns
 
-    if st.button('Start Trading'):
-        st.info("Starting the trading bot...")
-        # Add logic to interact with contract for starting the trade
+    imp_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
 
-    if st.button('Stop Trading'):
-        st.info("Stopping the trading bot...")
-        # Add logic to interact with contract for stopping the trade
+    return imp_df
 
-    st.subheader("Withdraw Funds")
+def explain_underperformance(input_data):
+    issues = []
 
-    # Withdrawal functionality for the contract owner
-    withdraw_address = st.text_input("Withdraw To Address", "0xRecipientAddressHere")
-    withdraw_amount = st.number_input("Withdraw Amount", min_value=0.1, step=0.1)
+    if input_data['KPI_Score'].values[0] < 50:
+        issues.append("Low KPI score")
 
-    if st.button('Withdraw Funds'):
-        if withdraw_address and withdraw_amount > 0:
-            try:
-                # Make the withdrawal transaction (sign and send)
-                transaction = contract.functions.withdrawFunds(withdraw_address, withdraw_amount).buildTransaction({
-                    'chainId': 56,  # BSC Mainnet
-                    'gas': 2000000,
-                    'gasPrice': w3.toWei('5', 'gwei'),
-                    'nonce': w3.eth.getTransactionCount(WALLET_ADDRESS),
-                })
-                signed_tx = w3.eth.account.sign_transaction(transaction, PRIVATE_KEY)
-                tx_hash = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
-                st.success(f"Withdrawal successful! TX Hash: {tx_hash.hex()}")
-            except Exception as e:
-                st.error(f"Error during withdrawal: {e}")
+    if input_data['Attendance'].values[0] < 70:
+        issues.append("Poor attendance")
 
-if __name__ == "__main__":
-    main()
+    if input_data['Productivity'].values[0] < 50:
+        issues.append("Low productivity")
+
+    if input_data['AbsenteeismRate'].values[0] > 10:
+        issues.append("High absenteeism")
+
+    if input_data['ProjectsCompleted'].values[0] < 3:
+        issues.append("Few completed projects")
+
+    if len(issues) == 0:
+        issues.append("No major issues detected")
+
+    return issues
+
+# ============================
+# UI
+# ============================
+st.title("Employee Performance Predictor")
+
+st.header("Enter Employee Data")
+
+# Inputs
+kpi = st.slider("KPI Score", 0, 100, 60)
+attendance = st.slider("Attendance (%)", 0, 100, 80)
+training = st.slider("Trainings Attended", 0, 20, 5)
+productivity = st.slider("Productivity Score", 0, 100, 65)
+absenteeism = st.slider("Absenteeism Rate (%)", 0, 30, 5)
+turnover = st.slider("Turnover Rate (%)", 0, 30, 5)
+projects = st.slider("Projects Completed", 0, 20, 5)
+
+department = st.selectbox("Department", ['Sales', 'HR', 'IT', 'Finance'])
+department = {'Sales': 0, 'HR': 1, 'IT': 2, 'Finance': 3}[department]
+
+manager_feedback = st.selectbox(
+    "Manager Feedback", ['Poor', 'Average', 'Good', 'Excellent']
+)
+manager_feedback = {
+    'Poor': 0,
+    'Average': 1,
+    'Good': 2,
+    'Excellent': 3
+}[manager_feedback]
+
+# Create input dataframe
+input_data = pd.DataFrame({
+    'KPI_Score': [kpi],
+    'Attendance': [attendance],
+    'TrainingCount': [training],
+    'Productivity': [productivity],
+    'AbsenteeismRate': [absenteeism],
+    'TurnoverRate': [turnover],
+    'ProjectsCompleted': [projects],
+    'Department': [department],
+    'ManagerFeedback': [manager_feedback]
+})
+
+# Align columns
+input_data = input_data.reindex(columns=X.columns, fill_value=0)
+
+# ============================
+# Prediction
+# ============================
+if st.button("Predict Performance"):
+
+    prediction, probability = predict_performance(input_data)
+    rating = prediction[0]
+
+    st.success(f"Predicted Performance Rating: {rating} / 5")
+
+    # ============================
+    # Feature Importance
+    # ============================
+    st.subheader("Key Factors Influencing Performance")
+
+    importance_df = get_feature_importance(input_data)
+
+    st.bar_chart(importance_df.set_index('Feature'))
+
+    # ============================
+    # Explanation
+    # ============================
+    st.subheader("Why this rating?")
+
+    issues = explain_underperformance(input_data)
+
+    for issue in issues:
+        st.write(f"- {issue}")
+
+    # ============================
+    # Recommendation
+    # ============================
+    st.subheader("HR Recommendation")
+
+    if rating <= 2:
+        st.error("High Risk: Immediate improvement plan required")
+    elif rating == 3:
+        st.warning("Average Performance: Provide training & mentorship")
+    else:
+        st.success("High Performer: Consider promotion or rewards")
