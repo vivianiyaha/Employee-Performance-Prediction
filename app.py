@@ -20,7 +20,7 @@ df['Department'] = df['Department'].map({
     'Finance': 3
 })
 
-df['Manager Feedback'] = df['ManagerFeedback'].map({
+df['ManagerFeedback'] = df['ManagerFeedback'].map({
     'Poor': 0,
     'Average': 1,
     'Good': 2,
