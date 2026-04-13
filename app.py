@@ -10,32 +10,35 @@ from sklearn.ensemble import RandomForestClassifier
 # ============================
 df = pd.read_csv('employeeproductivitydatasete.csv')
 
+# Clean column names
+df.columns = df.columns.str.strip()
+
 # ============================
 # Encode categorical variables
 # ============================
 df['Department'] = df['Department'].map({
-    'Sales': 0,
-    'HR': 1,
-    'IT': 2,
-    'Finance': 3
+    'IT': 0,
+    'Marketing': 1,
+    'HR': 2,
+    'Finance': 3,
+    'Sales': 4,
+    'Operations': 5
 })
 
-df['ManagerFeedback'] = df['ManagerFeedback'].map({
-    'Poor': 0,
-    'Average': 1,
-    'Good': 2,
-    'Excellent': 3
-})
-
+# ============================
 # Drop unnecessary columns
-df = df.drop(['EmployeeID', 'EmployeeName'], axis=1, errors='ignore')
+# ============================
+df = df.drop(['EmployeeName', 'EmployeeID'], axis=1)
+
+# ============================
+# Features & Target
+# ============================
+X = df.drop('PerformanceRating', axis=1)
+y = df['PerformanceRating']
 
 # ============================
 # Train Model
 # ============================
-X = df.drop('PerformanceRating', axis=1)
-y = df['PerformanceRating']   # 1–5 rating
-
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
@@ -54,42 +57,31 @@ def predict_performance(data):
 # ============================
 # Explainability Function
 # ============================
-def get_feature_importance(input_data):
-    importance = model.feature_importances_
-    feature_names = X.columns
-
-    imp_df = pd.DataFrame({
-        'Feature': feature_names,
-        'Importance': importance
-    }).sort_values(by='Importance', ascending=False)
-
-    return imp_df
-
 def explain_underperformance(input_data):
     issues = []
 
-    if input_data['KPI_Score'].values[0] < 50:
-        issues.append("Low KPI score")
+    if input_data['KPIScore'].values[0] < 60:
+        issues.append("Low KPI Score")
 
-    if input_data['Attendance'].values[0] < 70:
-        issues.append("Poor attendance")
+    if input_data['Attendance'].values[0] < 75:
+        issues.append("Low Attendance")
 
-    if input_data['Productivity'].values[0] < 50:
-        issues.append("Low productivity")
+    if input_data['ProductivityScore'].values[0] < 60:
+        issues.append("Low Productivity")
 
-    if input_data['AbsenteeismRate'].values[0] > 10:
-        issues.append("High absenteeism")
+    if input_data['AbsenteeismRate'].values[0] > 7:
+        issues.append("High Absenteeism")
 
-    if input_data['ProjectsCompleted'].values[0] < 3:
-        issues.append("Few completed projects")
+    if input_data['ProjectsCompleted'].values[0] < 5:
+        issues.append("Low Project Output")
 
-    if len(issues) == 0:
-        issues.append("No major issues detected")
+    if input_data['ManagerFeedback'].values[0] <= 2:
+        issues.append("Poor Manager Feedback")
 
     return issues
 
 # ============================
-# UI
+# STREAMLIT UI
 # ============================
 st.title("Employee Performance Predictor")
 
@@ -98,43 +90,48 @@ st.header("Enter Employee Data")
 # Inputs
 kpi = st.slider("KPI Score", 0, 100, 60)
 attendance = st.slider("Attendance (%)", 0, 100, 80)
-training = st.slider("Trainings Attended", 0, 20, 5)
+training = st.slider("Number of Trainings", 0, 10, 3)
 productivity = st.slider("Productivity Score", 0, 100, 65)
-absenteeism = st.slider("Absenteeism Rate (%)", 0, 30, 5)
-turnover = st.slider("Turnover Rate (%)", 0, 30, 5)
+absenteeism = st.slider("Absenteeism Rate (%)", 0, 10, 3)
+turnover = st.slider("Turnover Rate (%)", 0, 30, 10)
 projects = st.slider("Projects Completed", 0, 20, 5)
 
-department = st.selectbox("Department", ['Sales', 'HR', 'IT', 'Finance'])
-department = {'Sales': 0, 'HR': 1, 'IT': 2, 'Finance': 3}[department]
-
-manager_feedback = st.selectbox(
-    "Manager Feedback", ['Poor', 'Average', 'Good', 'Excellent']
+department = st.selectbox(
+    "Department",
+    ['IT', 'Marketing', 'HR', 'Finance', 'Sales', 'Operations']
 )
-manager_feedback = {
-    'Poor': 0,
-    'Average': 1,
-    'Good': 2,
-    'Excellent': 3
-}[manager_feedback]
 
-# Create input dataframe
+department = {
+    'IT': 0,
+    'Marketing': 1,
+    'HR': 2,
+    'Finance': 3,
+    'Sales': 4,
+    'Operations': 5
+}[department]
+
+manager_feedback = st.slider("Manager Feedback (1-5)", 1, 5, 3)
+
+# ============================
+# Create Input Data
+# ============================
 input_data = pd.DataFrame({
-    'KPI_Score': [kpi],
+    'KPIScore': [kpi],
     'Attendance': [attendance],
-    'TrainingCount': [training],
-    'Productivity': [productivity],
+    'NumberofTraining': [training],
+    'ProductivityScore': [productivity],
     'AbsenteeismRate': [absenteeism],
     'TurnoverRate': [turnover],
+    'ManagerFeedback': [manager_feedback],
     'ProjectsCompleted': [projects],
-    'Department': [department],
-    'ManagerFeedback': [manager_feedback]
+    'Department': [department]
 })
 
-# Align columns
+# Align with training columns
 input_data = input_data.reindex(columns=X.columns, fill_value=0)
 
 # ============================
-# Prediction
+# Prediction Button
 # ============================
 if st.button("Predict Performance"):
 
@@ -146,11 +143,17 @@ if st.button("Predict Performance"):
     # ============================
     # Feature Importance
     # ============================
-    st.subheader("Key Factors Influencing Performance")
+    st.subheader("Key Drivers of Performance")
 
-    importance_df = get_feature_importance(input_data)
+    importance = model.feature_importances_
+    features = X.columns
 
-    st.bar_chart(importance_df.set_index('Feature'))
+    imp_df = pd.DataFrame({
+        'Feature': features,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
+
+    st.bar_chart(imp_df.set_index('Feature'))
 
     # ============================
     # Explanation
@@ -159,8 +162,11 @@ if st.button("Predict Performance"):
 
     issues = explain_underperformance(input_data)
 
-    for issue in issues:
-        st.write(f"- {issue}")
+    if len(issues) == 0:
+        st.success("No major performance issues detected")
+    else:
+        for issue in issues:
+            st.write(f"- {issue}")
 
     # ============================
     # Recommendation
@@ -168,8 +174,8 @@ if st.button("Predict Performance"):
     st.subheader("HR Recommendation")
 
     if rating <= 2:
-        st.error("High Risk: Immediate improvement plan required")
+        st.error("Immediate intervention required")
     elif rating == 3:
-        st.warning("Average Performance: Provide training & mentorship")
+        st.warning("Needs improvement & monitoring")
     else:
-        st.success("High Performer: Consider promotion or rewards")
+        st.success("High performer — reward or promote")
