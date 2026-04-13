@@ -6,15 +6,43 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
 # ============================
-# Load dataset
+# Load Dataset
 # ============================
-df = pd.read_csv('employeeproductivitydatasete.csv')
+df = pd.read_csv('employee_performance.csv')
 
-# Clean column names
+# ============================
+# Clean Data
+# ============================
 df.columns = df.columns.str.strip()
 
+# Drop useless columns
+df = df.drop(['EmployeeName', 'EmployeeID'], axis=1)
+
 # ============================
-# Encode categorical variables
+# Create Target (PerformanceRating)
+# ============================
+def rate_performance(row):
+    score = (
+        row['KPIScore'] * 0.4 +
+        row['ProductivityScore'] * 0.4 +
+        row['Attendance'] * 0.2
+    )
+
+    if score >= 85:
+        return 5
+    elif score >= 75:
+        return 4
+    elif score >= 65:
+        return 3
+    elif score >= 55:
+        return 2
+    else:
+        return 1
+
+df['PerformanceRating'] = df.apply(rate_performance, axis=1)
+
+# ============================
+# Encode Department
 # ============================
 df['Department'] = df['Department'].map({
     'IT': 0,
@@ -26,52 +54,145 @@ df['Department'] = df['Department'].map({
 })
 
 # ============================
-# Drop unnecessary columns
-# ============================
-df = df.drop(['EmployeeName', 'EmployeeID'], axis=1)
-
-# ============================
-# Features & Target
+# Train Model
 # ============================
 X = df.drop('PerformanceRating', axis=1)
 y = df['PerformanceRating']
 
-# ============================
-# Train Model
-# ============================
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-model = RandomForestClassifier(n_estimators=100)
+model = RandomForestClassifier()
 model.fit(X_train, y_train)
 
 # ============================
-# Prediction Function
+# Functions
 # ============================
 def predict_performance(data):
     prediction = model.predict(data)
-    probability = model.predict_proba(data)
-    return prediction, probability
+    probs = model.predict_proba(data)
+    confidence = np.max(probs)
+    return prediction[0], confidence
+
+
+def explain_prediction(input_df):
+    importance = model.feature_importances_
+    feature_names = X.columns
+
+    imp_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
+
+    return imp_df.head(5)
+
+
+def performance_label(score):
+    return {
+        5: "⭐ Excellent",
+        4: "👍 Good",
+        3: "🙂 Average",
+        2: "⚠️ Below Average",
+        1: "❌ Poor"
+    }[score]
+
+
+def recommendation(rating):
+    if rating >= 4:
+        return "Promote / Reward Employee"
+    elif rating == 3:
+        return "Provide Training & Monitor"
+    else:
+        return "Immediate Improvement Plan Needed"
+
 
 # ============================
-# Explainability Function
+# UI
 # ============================
-def explain_underperformance(input_data):
-    issues = []
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Predictor", "About"])
 
-    if input_data['KPIScore'].values[0] < 60:
-        issues.append("Low KPI Score")
+# ============================
+# Predictor Page
+# ============================
+if page == "Predictor":
 
-    if input_data['Attendance'].values[0] < 75:
-        issues.append("Low Attendance")
+    st.title("📊 Employee Performance Predictor")
 
-    if input_data['ProductivityScore'].values[0] < 60:
-        issues.append("Low Productivity")
+    st.write("Predict employee performance and understand key drivers.")
 
-    if input_data['AbsenteeismRate'].values[0] > 7:
-        issues.append("High Absenteeism")
+    # Inputs
+    dept = st.selectbox("Department", ['IT', 'Marketing', 'HR', 'Finance', 'Sales', 'Operations'])
+    dept = {'IT': 0, 'Marketing': 1, 'HR': 2, 'Finance': 3, 'Sales': 4, 'Operations': 5}[dept]
 
+    kpi = st.slider("KPI Score", 0, 100, 70)
+    attendance = st.slider("Attendance", 0, 100, 80)
+    training = st.slider("Number of Training", 0, 10, 3)
+    productivity = st.slider("Productivity Score", 0, 100, 75)
+    absenteeism = st.slider("Absenteeism Rate", 0, 10, 2)
+    turnover = st.slider("Turnover Rate", 0, 30, 10)
+    feedback = st.slider("Manager Feedback (1-5)", 1, 5, 3)
+    projects = st.slider("Projects Completed", 0, 20, 5)
+
+    # Create input dataframe
+    input_df = pd.DataFrame({
+        'Department': [dept],
+        'KPIScore': [kpi],
+        'Attendance': [attendance],
+        'NumberofTraining': [training],
+        'ProductivityScore': [productivity],
+        'AbsenteeismRate': [absenteeism],
+        'TurnoverRate': [turnover],
+        'ManagerFeedback': [feedback],
+        'ProjectsCompleted': [projects]
+    })
+
+    # Align columns
+    input_df = input_df.reindex(columns=X.columns, fill_value=0)
+
+    # Prediction
+    if st.button("Predict Performance"):
+
+        pred, confidence = predict_performance(input_df)
+        label = performance_label(pred)
+        advice = recommendation(pred)
+
+        st.success(f"Predicted Rating: {pred} ({label})")
+        st.write(f"Confidence: {confidence:.2%}")
+
+        st.write("### 📌 Recommendation:")
+        st.info(advice)
+
+        # Feature importance
+        st.write("### 🔍 Why this prediction?")
+        importance_df = explain_prediction(input_df)
+
+        st.bar_chart(importance_df.set_index('Feature'))
+
+# ============================
+# About Page
+# ============================
+elif page == "About":
+
+    st.title("About Project")
+
+    st.write("""
+    ### 🎯 Problem
+    Organizations struggle to fairly evaluate employee performance.
+
+    ### 💡 Solution
+    This ML model predicts employee performance using objective metrics.
+
+    ### 🤖 Model
+    Random Forest Classifier
+
+    ### 📊 Output
+    Performance rating (1–5) with explanation.
+
+    ### 👩‍💻 Built By
+    Vivian Iyaha
+    """)
     if input_data['ProjectsCompleted'].values[0] < 5:
         issues.append("Low Project Output")
 
