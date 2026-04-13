@@ -198,8 +198,7 @@ elif page == "About":
 
     if input_data['ManagerFeedback'].values[0] <= 2:
         issues.append("Poor Manager Feedback")
-
-    return issues
+        return issues
 
 # ============================
 # STREAMLIT UI
