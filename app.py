@@ -210,7 +210,13 @@ elif page == "About":
 
     ### 📊 Output
     Performance rating (1–5)
-
-    ### 👩‍💻 Built By
-    Vivian Iyaha
     """)
+
+    elif page == 'Profile':
+    st.title('Profile')
+    st.write('Vivian Iyaha is a University of Port Harcourt graduate with a degree in Management. She is skilled in management and has a strong interest in emerging technologies like Machine Learning and Artificial Intelligence.')
+    st.write('Vivian is seeking opportunities to apply her HR expertise and learn more about these technologies. She is enthusiastic about collaborating on projects that leverage Machine Learning and Artificial Intelligence to solve real-world problems and drive innovation.')
+    st.write('Connect with Vivian on [LinkedIn](https://www.linkedin.com/in/vivian-i-556499126/)')
+
+
+    
